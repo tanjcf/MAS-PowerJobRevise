@@ -9,7 +9,7 @@
 <a href="https://github.com/KFCFans/PowerJob/blob/master/LICENSE"><img src="https://img.shields.io/github/license/KFCFans/PowerJob" alt="LICENSE"></a>
 </p>
 
-PowerJob（原OhMyScheduler）是全新一代分布式调度与计算框架，能让您轻松完成作业的调度与繁杂任务的分布式计算。
+PowerJob（原OhMyScheduler）是全新一代分布式调度与计算框架，能让您轻松完成作业的调度与繁杂任务的分布式计算。(这是在原框架上修改的魔改版本)
 # 简介
 ### 主要特性
 * 使用简单：提供前端Web界面，允许开发者可视化地完成调度任务的管理（增、删、改、查）、任务运行状态监控和运行日志查看等功能。
@@ -75,6 +75,7 @@ PS：感谢文档翻译平台[breword](https://www.breword.com/)对本项目英�
       <img src="https://raw.githubusercontent.com/KFCFans/PowerJob/master/others/images/powerjob_user.png" alt="PowerJob" title="PowerJob"/>
       </p>
 [点击进行接入登记，为 PowerJob 的发展贡献自己的力量](https://github.com/KFCFans/PowerJob/issues/6)
+我个人添加了全新功能，来让powerjob对用户更加友好。
 
 感谢以下接入用户的大力支持！
 
