@@ -138,16 +138,4 @@ public class FileTransferServer  extends ServerSocket{
         }
     }
 
-    /**
-     * 入口
-     * @param args
-     */
-//    public static void main(String[] args) {
-//        try {
-//            FileTransferServer server = new FileTransferServer(); // 启动服务端
-//            server.load();
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
-//    }
 }
