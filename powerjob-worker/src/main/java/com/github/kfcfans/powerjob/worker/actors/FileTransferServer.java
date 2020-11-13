@@ -28,6 +28,7 @@ public class FileTransferServer  extends ServerSocket{
     public FileTransferServer(final int server_port,final String urlPath) throws Exception {
         super(server_port);
         this.urlPath=urlPath;
+        this.isDirectoryMkdir(urlPath);
     }
 
     /**
@@ -122,15 +123,19 @@ public class FileTransferServer  extends ServerSocket{
     }
 
     /**
-     * 入口
-     * @param args
+     * 遍历目录是否存在如果不存在创建目录
+     * @param urlPath
      */
-//    public static void main(String[] args) {
-//        try {
-//            FileTransferServer server = new FileTransferServer(); // 启动服务端
-//            server.load();
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
-//    }
+    private static void isDirectoryMkdir(final String urlPath){
+        String[] directoryArray = urlPath.split("/");
+        String tmp = "";
+        for (String directory : directoryArray) {
+            tmp = tmp+directory+"/";
+            File direc = new File(tmp);
+            if(!direc.exists()) {
+                direc.mkdir();
+            }
+        }
+    }
+
 }
