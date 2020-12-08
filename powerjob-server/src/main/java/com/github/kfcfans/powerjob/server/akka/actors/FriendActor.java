@@ -25,6 +25,7 @@ import java.util.Map;
 public class FriendActor extends AbstractActor {
     @Override
     public Receive createReceive() {
+
         return receiveBuilder()
                 .match(Ping.class, this::onReceivePing)
                 .match(RunJobOrWorkflowReq.class, this::onReceiveFriendResendRunRequest)

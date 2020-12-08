@@ -40,6 +40,12 @@ public interface InstanceInfoRepository extends JpaRepository<InstanceInfoDO, Lo
     @Query(value = "update InstanceInfoDO set status = ?2, runningTimes = ?3, actualTriggerTime = ?4, finishedTime = ?5, taskTrackerAddress = ?6, result = ?7, instanceParams = ?8, gmtModified = ?9 where instanceId = ?1")
     int update4TriggerFailed(long instanceId, int status, long runningTimes, long actualTriggerTime, long finishedTime, String taskTrackerAddress, String result, String instanceParams, Date modifyTime);
 
+//    @Transactional
+//    @Modifying
+//    @CanIgnoreReturnValue
+//    @Query(value = "update InstanceInfoDO set status = ?2, runningTimes = ?3, actualTriggerTime = ?4, taskTrackerAddress = ?5, instanceParams = ?6, gmtModified = ?7 ,processorInfo = ?8 where instanceId = ?1")
+//    int update4TriggerSucceed(long instanceId, int status, long runningTimes, long actualTriggerTime, String taskTrackerAddress, String instanceParams, Date modifyTime,String processorInfo);
+
     @Transactional
     @Modifying
     @CanIgnoreReturnValue

@@ -146,10 +146,15 @@ public class ContainerService {
                 }
                 BeanUtils.copyProperties(request, fileInfo);
                 fileInfo.setGmtModified(new Date());
+                // zip文件需要解压路径
+                String[] fileNameArray =fileNames[fileNames.length-1].split("\\.");
+                if(fileNameArray.length > 1 && fileNameArray[fileNameArray.length-1].equals(PowerJobServerConfigKey.ZIP_File)){
+                    fileInfo.setWorkPathFile(fileNameArray[0]);
+                }else {
+                    fileInfo.setWorkPathFile(fileNames[fileNames.length-1]);
+                }
 
-                fileInfo.setWorkPathFile(PowerJobServerConfigKey.WORKER_FILE_PATH+appInfo.getAppName()+PowerJobServerConfigKey.H2+fileNames[fileNames.length-1]);
                 fileInfo.setIpAddress(request.getWorkeAddres().toString());
-                System.out.println(PowerJobServerConfigKey.WORKER_FILE_PATH+appInfo.getAppName()+PowerJobServerConfigKey.H2+fileNames[fileNames.length-1]);
                 fileInfoRepository.saveAndFlush(fileInfo);
             }
         }catch (Exception e){

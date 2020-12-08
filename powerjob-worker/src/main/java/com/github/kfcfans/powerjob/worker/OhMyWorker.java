@@ -151,6 +151,10 @@ public class OhMyWorker implements ApplicationContextAware, InitializingBean, Di
         OhMyWorker.config = config;
     }
 
+    public static OhMyConfig getConfig() {
+        return config;
+    }
+
     @SuppressWarnings("rawtypes")
     private Long assertAppName() {
 

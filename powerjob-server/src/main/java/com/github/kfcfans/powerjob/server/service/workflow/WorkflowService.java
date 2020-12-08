@@ -3,6 +3,7 @@ package com.github.kfcfans.powerjob.server.service.workflow;
 import com.alibaba.fastjson.JSONObject;
 import com.github.kfcfans.powerjob.common.PowerJobException;
 import com.github.kfcfans.powerjob.common.TimeExpressionType;
+import com.github.kfcfans.powerjob.common.WorkflowInstanceStatus;
 import com.github.kfcfans.powerjob.common.request.http.SaveWorkflowRequest;
 import com.github.kfcfans.powerjob.common.response.WorkflowInfoDTO;
 import com.github.kfcfans.powerjob.server.akka.OhMyServer;
@@ -13,8 +14,10 @@ import com.github.kfcfans.powerjob.server.common.utils.CronExpression;
 import com.github.kfcfans.powerjob.server.common.utils.WorkflowDAGUtils;
 import com.github.kfcfans.powerjob.server.persistence.core.model.AppInfoDO;
 import com.github.kfcfans.powerjob.server.persistence.core.model.WorkflowInfoDO;
+import com.github.kfcfans.powerjob.server.persistence.core.model.WorkflowInstanceInfoDO;
 import com.github.kfcfans.powerjob.server.persistence.core.repository.AppInfoRepository;
 import com.github.kfcfans.powerjob.server.persistence.core.repository.WorkflowInfoRepository;
+import com.github.kfcfans.powerjob.server.persistence.core.repository.WorkflowInstanceInfoRepository;
 import com.github.kfcfans.powerjob.server.service.instance.InstanceTimeWheelService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -39,7 +42,8 @@ public class WorkflowService {
     private WorkflowInstanceManager workflowInstanceManager;
     @Resource
     private WorkflowInfoRepository workflowInfoRepository;
-
+    @Resource
+    private WorkflowInstanceInfoRepository workflowInstanceInfoRepository;
     /**
      * 保存/修改DAG工作流
      * @param req 请求
@@ -147,7 +151,6 @@ public class WorkflowService {
     public Long runWorkflow(Long wfId, Long appId, String initParams, long delay) {
         WorkflowInfoDO wfInfo = permissionCheck(wfId, appId);
         AppInfoDO appInfo = appInfoRepository.findById(appId).orElseThrow(() -> new IllegalArgumentException("can't find appInfo by appId: " + appId));
-
         String targetServer = appInfo.getCurrentServer();
         if (Objects.equals(targetServer, OhMyServer.getActorSystemAddress())) {
             return realRunWorkflow(wfInfo, initParams, delay);
@@ -164,14 +167,28 @@ public class WorkflowService {
         }
     }
 
+//    public Long DispatchServicerunWorkflow(Long wfId, Long appId, String initParams, long delay) {
+//        WorkflowInfoDO wfInfo = permissionCheck(wfId, appId);
+//            return realRunWorkflow(wfInfo, initParams, delay);
+//    }
+
+    /**
+     *
+     * @param wfInfo
+     * @param initParams
+     * @param delay
+     * @return
+     */
     private Long realRunWorkflow(WorkflowInfoDO wfInfo, String initParams, long delay) {
         log.info("[WorkflowService-{}] try to run workflow, initParams={},delay={} ms.", wfInfo.getId(), initParams, delay);
         Long wfInstanceId = workflowInstanceManager.create(wfInfo, initParams);
+
         if (delay <= 0) {
             workflowInstanceManager.start(wfInfo, wfInstanceId, initParams);
         }else {
             InstanceTimeWheelService.schedule(wfInstanceId, delay, () -> workflowInstanceManager.start(wfInfo, wfInstanceId, initParams));
         }
+
         return wfInstanceId;
     }
 
@@ -182,4 +199,5 @@ public class WorkflowService {
         }
         return wfInfo;
     }
+
 }

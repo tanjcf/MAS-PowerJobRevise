@@ -60,5 +60,14 @@ public class PEWorkflowDAG implements Serializable {
         this.nodes = nodes;
         this.edges = edges == null ? Lists.newLinkedList() : edges;
     }
-
+    // true代表他是树的根节点
+    public static boolean tree(List<Edge> edges, Long jobId){
+       boolean isTreeBoss = true;
+        for (Edge edge: edges) {
+            if (edge.getTo().equals(jobId)){
+                isTreeBoss =false;
+            }
+        }
+     return isTreeBoss;
+    }
 }

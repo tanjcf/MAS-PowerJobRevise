@@ -39,9 +39,9 @@ public class SaveJobInfoRequest {
     /* ************************** 执行方式 ************************** */
     // 执行类型，单机/广播/MR
     private ExecuteType executeType;
-    // 执行器类型，Java/Shell
+    // 执行器类型，Java/Shell/任务流程依赖
     private ProcessorType processorType;
-    // 执行器信息
+    // 执行器信息/任务流程依赖id
     private String processorInfo;
 
 

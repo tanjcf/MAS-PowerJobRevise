@@ -10,6 +10,8 @@ import com.github.kfcfans.powerjob.server.persistence.core.repository.InstanceIn
 import com.github.kfcfans.powerjob.server.service.ha.WorkerManagerService;
 import com.github.kfcfans.powerjob.server.service.instance.InstanceManager;
 import com.github.kfcfans.powerjob.server.service.instance.InstanceMetadataService;
+import com.github.kfcfans.powerjob.server.service.workflow.WorkflowInstanceManager;
+import com.github.kfcfans.powerjob.server.service.workflow.WorkflowService;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
@@ -25,7 +27,7 @@ import java.util.List;
 import java.util.Set;
 
 import static com.github.kfcfans.powerjob.common.InstanceStatus.*;
-
+import static com.github.kfcfans.powerjob.common.ProcessorType.*;
 
 /**
  * 派送服务（将任务从Server派发到Worker）
@@ -43,7 +45,10 @@ public class DispatchService {
     private InstanceMetadataService instanceMetadataService;
     @Resource
     private InstanceInfoRepository instanceInfoRepository;
-
+    @Resource
+    private WorkflowService workflowService;
+    @Resource
+    private WorkflowInstanceManager workflowInstanceManager;
     private static final Splitter commaSplitter = Splitter.on(",");
 
     public void redispatch(JobInfoDO jobInfo, long instanceId, long currentRunningTimes) {
@@ -58,6 +63,7 @@ public class DispatchService {
      * @param currentRunningTimes 当前运行的次数
      * @param instanceParams 实例的运行参数，API触发方式专用
      * @param wfInstanceId 工作流任务实例ID，workflow 任务专用
+     * @Param realWfInstanceId 依赖的工作流程 WfInstanceId
      */
     public void dispatch(JobInfoDO jobInfo, long instanceId, long currentRunningTimes, String instanceParams, Long wfInstanceId) {
         Long jobId = jobInfo.getId();
@@ -92,12 +98,44 @@ public class DispatchService {
                 return;
             }
         }
+/**
+ *   * @param wfId 工作流ID
+ *      * @param appId 所属应用ID
+ *      * @param initParams 启动参数
+ *      * @param delay 延迟时间
+ *      * @return 该 workflow 实例的 instanceId（wfInstanceId）
+ */
+        // 筛选指定的机器
+        List<String> finalWorkers = Lists.newLinkedList();
+        // 传入ProcessorType
+        instanceInfo.setProcessorType(jobInfo.getProcessorType());
+
+        // 判断是不是任务流程依赖
+        if (WORK_FLOW.getV() == jobInfo.getProcessorType()){
+            Long wfId =Long.parseLong(jobInfo.getProcessorInfo());
+            String initParams = jobInfo.getJobParams();
+            Long workflowId =  workflowService.runWorkflow(wfId,jobInfo.getAppId(),initParams,0);
+
+            //暂时用来存放workflowId
+            instanceInfo.setProcessorInfo(""+workflowId);
+            instanceInfoRepository.save(instanceInfo);
+
+            // 修改状态
+            instanceInfoRepository.update4TriggerSucceed(instanceId, RUNNING.getV(), currentRunningTimes + 1, current, "", dbInstanceParams, now);
+        //    workflowInstanceManager.runWorkflowStatusFailed(workflowId,instanceId,"",currentRunningTimes,current,dbInstanceParams,now);
+            // 装载缓存
+            instanceMetadataService.loadJobInfo(instanceId, jobInfo);
+
+            return;
+        }
+        instanceInfoRepository.save(instanceInfo);
+
+
 
         // 获取当前所有可用的Worker
         List<String> allAvailableWorker = WorkerManagerService.getSortedAvailableWorker(jobInfo.getAppId(), jobInfo.getMinCpuCores(), jobInfo.getMinMemorySpace(), jobInfo.getMinDiskSpace());
 
-        // 筛选指定的机器
-        List<String> finalWorkers = Lists.newLinkedList();
+
         if (!StringUtils.isEmpty(jobInfo.getDesignatedWorkers())) {
             Set<String> designatedWorkers = Sets.newHashSet(commaSplitter.splitToList(jobInfo.getDesignatedWorkers()));
             for (String av : allAvailableWorker) {
@@ -150,6 +188,7 @@ public class DispatchService {
 
         req.setThreadConcurrency(jobInfo.getConcurrency());
 
+
         // 发送请求（不可靠，需要一个后台线程定期轮询状态）
         String taskTrackerAddress = finalWorkers.get(0);
         ActorSelection taskTrackerActor = OhMyServer.getTaskTrackerActor(taskTrackerAddress);
@@ -161,5 +200,6 @@ public class DispatchService {
 
         // 装载缓存
         instanceMetadataService.loadJobInfo(instanceId, jobInfo);
+
     }
 }

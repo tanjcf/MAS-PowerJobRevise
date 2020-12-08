@@ -34,6 +34,6 @@ public interface JobInfoRepository extends JpaRepository<JobInfoDO, Long> {
 
     long countByAppIdAndStatusNot(long appId, int status);
     // 生成任务流
-    List<JobInfoDO> findByWfNameLike(String wfName);
+    List<JobInfoDO> findByWfNameLikeAndStatusNot(String wfName,int status);
 
 }

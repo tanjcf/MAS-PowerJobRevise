@@ -1,9 +1,6 @@
 package com.github.kfcfans.powerjob.server.service.timing;
 
-import com.github.kfcfans.powerjob.common.InstanceStatus;
-import com.github.kfcfans.powerjob.common.SystemInstanceResult;
-import com.github.kfcfans.powerjob.common.TimeExpressionType;
-import com.github.kfcfans.powerjob.common.WorkflowInstanceStatus;
+import com.github.kfcfans.powerjob.common.*;
 import com.github.kfcfans.powerjob.server.common.constans.SwitchableStatus;
 import com.github.kfcfans.powerjob.server.akka.OhMyServer;
 import com.github.kfcfans.powerjob.server.persistence.core.model.*;
@@ -24,6 +21,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+
+import static com.github.kfcfans.powerjob.common.InstanceStatus.RUNNING;
 
 /**
  * 定时状态检查
@@ -115,7 +114,8 @@ public class InstanceStatusCheckService {
             threshold = System.currentTimeMillis() - RECEIVE_TIMEOUT_MS;
             List<InstanceInfoDO> waitingWorkerReceiveInstances = instanceInfoRepository.findByAppIdInAndStatusAndActualTriggerTimeLessThan(partAppIds, InstanceStatus.WAITING_WORKER_RECEIVE.getV(), threshold);
             if (!CollectionUtils.isEmpty(waitingWorkerReceiveInstances)) {
-                log.warn("[InstanceStatusChecker] instances({}) didn't receive any reply from worker.", waitingWorkerReceiveInstances);
+
+                log.warn("[InstanceStatusChecker] instances(检查 WAITING_WORKER_RECEIVE 状态的任务) didn't receive any reply from worker." );
                 waitingWorkerReceiveInstances.forEach(instance -> {
                     // 重新派发
                     JobInfoDO jobInfoDO = jobInfoRepository.findById(instance.getJobId()).orElseGet(JobInfoDO::new);
@@ -123,7 +123,7 @@ public class InstanceStatusCheckService {
                 });
             }
 
-            // 3. 检查 RUNNING 状态的任务（一定时间没收到 TaskTracker 的状态报告，视为失败）
+            // 3. 检查 RUNNING 状态的任务（一定时间没收到 TaskTracker 的状态报告，视为失败） 依赖工作流程任务除外。
             threshold = System.currentTimeMillis() - RUNNING_TIMEOUT_MS;
             List<InstanceInfoDO> failedInstances = instanceInfoRepository.findByAppIdInAndStatusAndGmtModifiedBefore(partAppIds, InstanceStatus.RUNNING.getV(), new Date(threshold));
             if (!CollectionUtils.isEmpty(failedInstances)) {
@@ -133,6 +133,36 @@ public class InstanceStatusCheckService {
                     JobInfoDO jobInfoDO = jobInfoRepository.findById(instance.getJobId()).orElseGet(JobInfoDO::new);
                     TimeExpressionType timeExpressionType = TimeExpressionType.of(jobInfoDO.getTimeExpressionType());
                     SwitchableStatus switchableStatus = SwitchableStatus.of(jobInfoDO.getStatus());
+
+                    // 跳过依赖工作流程任务
+                    if (instance.getProcessorType() == ProcessorType.WORK_FLOW.getV() ){
+                        Long wfInstanceId =Long.parseLong(instance.getProcessorInfo());
+                        WorkflowInstanceInfoDO wfInstanceInfoOpt = workflowInstanceInfoRepository.findByWfInstanceId(wfInstanceId).orElseGet(WorkflowInstanceInfoDO::new);
+                        // 防止重启的时任务没被结束
+                        // 修改状态对应需要加1 手动停止除外
+                       if (WorkflowInstanceStatus.WAITING.getV() < wfInstanceInfoOpt.getStatus()){
+                       if (wfInstanceInfoOpt.getStatus()+ 1 == instance.getStatus()){
+                                return;
+                            }
+                            instance.setStatus(wfInstanceInfoOpt.getStatus()+1);
+                        }else {
+                            if (wfInstanceInfoOpt.getStatus() == instance.getStatus()){
+                                return;
+                            }
+
+                                instance.setStatus(wfInstanceInfoOpt.getStatus());
+
+
+                        }
+                        // 查询当前运行的实例数
+                        long current = System.currentTimeMillis();
+                        Date now = new Date();
+                        // 修改状态
+                        instanceInfoRepository.update4TriggerSucceed(instance.getInstanceId(), instance.getStatus(), instance.getActualTriggerTime()+1, current, "", instance.getInstanceParams(), now);
+                        // 修改workflowInstace DAG状态
+                        instanceManager.processFinishedInstance(instance.getInstanceId(), instance.getWfInstanceId(), InstanceStatus.of(instance.getStatus()), SystemInstanceResult.NO_WORKER_AVAILABLE);
+                        return;
+                    }
 
                     // 如果任务已关闭，则不进行重试，将任务置为失败即可；秒级任务也直接置为失败，由派发器重新调度
                     if (switchableStatus != SwitchableStatus.ENABLE || TimeExpressionType.frequentTypes.contains(timeExpressionType.getV())) {

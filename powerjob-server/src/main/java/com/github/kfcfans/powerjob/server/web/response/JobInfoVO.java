@@ -88,7 +88,10 @@ public class JobInfoVO {
 
     // 报警用户ID列表
     private List<String> notifyUserIds;
-
+    // 用于自动生成关联任务流
+    private String wfName;
+    // 输入表
+    private String inputTables;
     public static JobInfoVO from(JobInfoDO jobInfoDO) {
         JobInfoVO jobInfoVO = new JobInfoVO();
         BeanUtils.copyProperties(jobInfoDO, jobInfoVO);

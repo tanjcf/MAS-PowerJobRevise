@@ -11,11 +11,13 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.text.DecimalFormat;
 
+import static com.github.kfcfans.powerjob.common.utils.UZipFileUtils.unZipFiles;
+
 @Slf4j
 public class FileTransferServer  extends ServerSocket{
-   // private static int SERVER_PORT = 8899; // 服务端端口
     private String urlPath="";
     private static DecimalFormat df = null;
+    private static String filePlit = "zip";
 
     static {
         // 设置数字格式，保留一位有效小数
@@ -86,7 +88,21 @@ public class FileTransferServer  extends ServerSocket{
                     fos.write(bytes, 0, length);
                     fos.flush();
                 }
-                System.out.println("======== 文件接收成功 [File Name：" + fileName + "] [Size：" + getFormatFileSize(fileLength) + "] ========");
+                log.info("======== 文件接收成功 [File Name：" + fileName + "] [Size：" + getFormatFileSize(fileLength) + "] ========");
+
+                // 文件是zip的文件需要解压
+                String[] fileNameArrays = fileName.split("\\.");
+                if (fileNameArrays.length>1 && fileNameArrays[1].equals(filePlit)){
+                    String zipUrlPath =urlPath+File.separator+fileNameArrays[0]+File.separator;
+                    File zipDirectory = new File(zipUrlPath);
+                    if(!zipDirectory.exists()) {
+                        zipDirectory.mkdir();
+                    }
+                    // 解压文件
+                    unZipFiles(fileName, zipUrlPath);
+                    log.info("======= 文件解压成功 [File Name："+ fileName+"] ========" );
+                }
+
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
@@ -137,5 +153,6 @@ public class FileTransferServer  extends ServerSocket{
             }
         }
     }
+
 
 }

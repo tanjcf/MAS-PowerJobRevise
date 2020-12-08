@@ -9,7 +9,7 @@
 <a href="https://github.com/KFCFans/PowerJob/blob/master/LICENSE"><img src="https://img.shields.io/github/license/KFCFans/PowerJob" alt="LICENSE"></a>
 </p>
 
-PowerJob（原OhMyScheduler）是全新一代分布式调度与计算框架，能让您轻松完成作业的调度与繁杂任务的分布式计算。(这是在原框架上修改的魔改版本)
+PowerJob（原OhMyScheduler）是全新一代分布式调度与计算框架，能让您轻松完成作业的调度与繁杂任务的分布式计算。
 # 简介
 ### 主要特性
 * 使用简单：提供前端Web界面，允许开发者可视化地完成调度任务的管理（增、删、改、查）、任务运行状态监控和运行日志查看等功能。
@@ -47,7 +47,7 @@ PowerJob 的设计目标为企业级的分布式任务调度平台，即成为�
 | 在线任务治理   | 不支持                   | 支持                                     | 支持                                              | **支持**                                                     |
 | 日志白屏化     | 不支持                   | 支持                                     | 不支持                                            | **支持**                                                     |
 | 调度方式及性能 | 基于数据库锁，有性能瓶颈 | 基于数据库锁，有性能瓶颈                 | 不详                                              | **无锁化设计，性能强劲无上限**                               |
-| 报警监控       | 无                       | 邮件                                     | 短信                                              | **邮件 钉钉和灵犀电话通知，并支持开发者扩展**                             |
+| 报警监控       | 无                       | 邮件                                     | 短信                                              | **邮件与钉钉，并支持开发者扩展**                             |
 | 系统依赖       | JDBC支持的关系型数据库（MySQL、Oracle...）                    | MySQL                                    | 人民币        | **任意Spring Data Jpa支持的关系型数据库（MySQL、Oracle...）** |
 | DAG工作流      | 不支持                   | 不支持                                   | 支持                                              | **支持**                                   |
 
@@ -75,7 +75,6 @@ PS：感谢文档翻译平台[breword](https://www.breword.com/)对本项目英�
       <img src="https://raw.githubusercontent.com/KFCFans/PowerJob/master/others/images/powerjob_user.png" alt="PowerJob" title="PowerJob"/>
       </p>
 [点击进行接入登记，为 PowerJob 的发展贡献自己的力量](https://github.com/KFCFans/PowerJob/issues/6)
-我个人添加了全新功能，来让powerjob对用户更加友好。
 
 感谢以下接入用户的大力支持！
 

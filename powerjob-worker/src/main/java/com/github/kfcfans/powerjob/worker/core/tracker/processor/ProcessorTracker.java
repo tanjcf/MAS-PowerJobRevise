@@ -4,6 +4,7 @@ import akka.actor.ActorSelection;
 import com.github.kfcfans.powerjob.common.*;
 import com.github.kfcfans.powerjob.common.utils.CommonUtils;
 import com.github.kfcfans.powerjob.worker.OhMyWorker;
+import com.github.kfcfans.powerjob.worker.common.OhMyConfig;
 import com.github.kfcfans.powerjob.worker.common.constants.TaskStatus;
 import com.github.kfcfans.powerjob.worker.common.utils.AkkaUtils;
 import com.github.kfcfans.powerjob.worker.common.utils.SpringUtils;
@@ -23,6 +24,7 @@ import com.github.kfcfans.powerjob.worker.pojo.request.TaskTrackerStartTaskReq;
 import com.github.kfcfans.powerjob.worker.core.processor.sdk.BasicProcessor;
 import com.google.common.collect.Queues;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.CollectionUtils;
 
@@ -70,7 +72,6 @@ public class ProcessorTracker {
     // 当 ProcessorTracker 出现根本性错误（比如 Processor 创建失败，所有的任务直接失败）
     private boolean lethal = false;
     private String lethalReason;
-
     /**
      * 创建 ProcessorTracker（其实就是创建了个执行用的线程池 T_T）
      */
@@ -285,7 +286,9 @@ public class ProcessorTracker {
         String processorInfo = instanceInfo.getProcessorInfo();
 
         switch (processorType) {
+
             case EMBEDDED_JAVA:
+                log.info("[ProcessorTracker-{}]EMBEDDED_JAVA={}",instanceId,processorType.getV());
                 // 先使用 Spring 加载
                 if (SpringUtils.supportSpringBean()) {
                     try {
@@ -300,12 +303,15 @@ public class ProcessorTracker {
                 }
                 break;
             case SHELL:
+                log.info("[ProcessorTracker-{}]SHELL={}",instanceId,processorType.getV());
                 processor = new ShellProcessor(instanceId, processorInfo, instanceInfo.getInstanceTimeoutMS());
                 break;
             case PYTHON:
+                log.info("[ProcessorTracker-{}]PYTHON={}",instanceId,processorType.getV());
                 processor = new PythonProcessor(instanceId, processorInfo, instanceInfo.getInstanceTimeoutMS());
                 break;
             case JAVA_CONTAINER:
+                log.info("[ProcessorTracker-{}]JAVA_CONTAINER={}",instanceId,processorType.getV());
                 String[] split = processorInfo.split("#");
                 log.info("[ProcessorTracker-{}] try to load processor({}) in container({})", instanceId, split[1], split[0]);
 
@@ -317,8 +323,10 @@ public class ProcessorTracker {
                 }
                 break;
             default:
+                log.info("[ProcessorTracker-{}]default={}",instanceId,processorType.getV());
                 log.warn("[ProcessorTracker-{}] unknown processor type: {}.", instanceId, processorType);
                 throw new PowerJobException("unknown processor type of " + processorType);
+
         }
 
         if (processor == null) {

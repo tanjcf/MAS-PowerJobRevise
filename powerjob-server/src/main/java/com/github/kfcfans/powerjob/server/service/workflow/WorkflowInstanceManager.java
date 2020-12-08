@@ -10,18 +10,14 @@ import com.github.kfcfans.powerjob.common.utils.JsonUtils;
 import com.github.kfcfans.powerjob.common.utils.SegmentLock;
 import com.github.kfcfans.powerjob.server.common.constans.SwitchableStatus;
 import com.github.kfcfans.powerjob.server.common.utils.WorkflowDAGUtils;
-import com.github.kfcfans.powerjob.server.persistence.core.model.JobInfoDO;
-import com.github.kfcfans.powerjob.server.persistence.core.model.UserInfoDO;
-import com.github.kfcfans.powerjob.server.persistence.core.model.WorkflowInfoDO;
-import com.github.kfcfans.powerjob.server.persistence.core.model.WorkflowInstanceInfoDO;
-import com.github.kfcfans.powerjob.server.persistence.core.repository.JobInfoRepository;
-import com.github.kfcfans.powerjob.server.persistence.core.repository.WorkflowInfoRepository;
-import com.github.kfcfans.powerjob.server.persistence.core.repository.WorkflowInstanceInfoRepository;
+import com.github.kfcfans.powerjob.server.persistence.core.model.*;
+import com.github.kfcfans.powerjob.server.persistence.core.repository.*;
 import com.github.kfcfans.powerjob.server.service.DispatchService;
 import com.github.kfcfans.powerjob.server.service.UserService;
 import com.github.kfcfans.powerjob.server.service.alarm.AlarmCenter;
 import com.github.kfcfans.powerjob.server.service.alarm.WorkflowInstanceAlarm;
 import com.github.kfcfans.powerjob.server.service.id.IdGenerateService;
+import com.github.kfcfans.powerjob.server.service.instance.InstanceManager;
 import com.github.kfcfans.powerjob.server.service.instance.InstanceService;
 import com.google.common.collect.LinkedListMultimap;
 import com.google.common.collect.Lists;
@@ -32,10 +28,10 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+
+import static com.github.kfcfans.powerjob.common.InstanceStatus.FAILED;
+import static com.github.kfcfans.powerjob.common.InstanceStatus.WAITING_WORKER_RECEIVE;
 
 /**
  * 管理运行中的工作流实例
@@ -61,7 +57,12 @@ public class WorkflowInstanceManager {
     private WorkflowInfoRepository workflowInfoRepository;
     @Resource
     private WorkflowInstanceInfoRepository workflowInstanceInfoRepository;
-
+    @Resource
+    private InstanceInfoRepository instanceInfoRepository;
+    @Resource
+    private InstanceManager instanceManager;
+    @Resource
+    private WorkflowInstanceStuatusRepository workflowInstanceStuatusRepository;
     private final SegmentLock segmentLock = new SegmentLock(16);
 
     /**
@@ -71,13 +72,13 @@ public class WorkflowInstanceManager {
      * @return wfInstanceId
      */
     public Long create(WorkflowInfoDO wfInfo, String initParams) {
-
         Long wfId = wfInfo.getId();
         Long wfInstanceId = idGenerateService.allocate();
 
         // 仅创建，不写入 DAG 图信息
         Date now = new Date();
         WorkflowInstanceInfoDO newWfInstance = new WorkflowInstanceInfoDO();
+        WorkflowInstanceStuatusInfoDo newWorkflowInstanceStuatus = new WorkflowInstanceStuatusInfoDo();
         newWfInstance.setAppId(wfInfo.getAppId());
         newWfInstance.setWfInstanceId(wfInstanceId);
         newWfInstance.setWorkflowId(wfId);
@@ -98,10 +99,14 @@ public class WorkflowInstanceManager {
 
         if (dbNum < allJobIds.size()) {
             log.warn("[Workflow-{}|{}] this workflow need {} jobs, but just find {} jobs in database, maybe you delete or disable some job!", wfId, wfInstanceId, needNum, dbNum);
-            onWorkflowInstanceFailed(SystemInstanceResult.CAN_NOT_FIND_JOB, newWfInstance);
+            onWorkflowInstanceFailed(SystemInstanceResult.CAN_NOT_FIND_JOB, newWfInstance,null);
         }else {
             workflowInstanceInfoRepository.save(newWfInstance);
         }
+        // 初始化工作实例状态跟踪
+        newWorkflowInstanceStuatus.setWfInstanceId(wfInstanceId);
+        newWorkflowInstanceStuatus.setStatus(WorkflowInstanceStatus.SUCCEED.getV());
+        workflowInstanceStuatusRepository.save(newWorkflowInstanceStuatus);
         return wfInstanceId;
     }
 
@@ -114,10 +119,12 @@ public class WorkflowInstanceManager {
     public void start(WorkflowInfoDO wfInfo, Long wfInstanceId, String initParams) {
 
         Optional<WorkflowInstanceInfoDO> wfInstanceInfoOpt = workflowInstanceInfoRepository.findByWfInstanceId(wfInstanceId);
+        // 判断查询的类对象是否存在，不存在跳过
         if (!wfInstanceInfoOpt.isPresent()) {
             log.error("[WorkflowInstanceManager] can't find metadata by workflowInstanceId({}).", wfInstanceId);
             return;
         }
+
         WorkflowInstanceInfoDO wfInstanceInfo = wfInstanceInfoOpt.get();
 
         // 不是等待中，不再继续执行（可能上一流程已经失败）
@@ -161,34 +168,38 @@ public class WorkflowInstanceManager {
 
             // 真正开始执行根任务
             roots.forEach(root -> runInstance(root.getJobId(), root.getInstanceId(), wfInstanceId, wfRootInstanceParams));
+
         }catch (Exception e) {
 
             log.error("[Workflow-{}|{}] submit workflow: {} failed.", wfInfo.getId(), wfInstanceId, wfInfo, e);
-            onWorkflowInstanceFailed(e.getMessage(), wfInstanceInfo);
+            onWorkflowInstanceFailed(e.getMessage(), wfInstanceInfo,null);
         }
     }
 
     /**
-     * 下一步（当工作流的某个任务完成时调用该方法）
+     * 下一步（当工作流的某个任务完成时调用该方法）,instanceid为null意味着这是工作流程中一个分支没有任务实例。
      * @param wfInstanceId 工作流任务实例ID
      * @param instanceId 具体完成任务的某个任务实例ID
      * @param status 完成任务的任务实例状态（SUCCEED/FAILED/STOPPED）
      * @param result 完成任务的任务实例结果
+     *
      */
-    public void move(Long wfInstanceId, Long instanceId, InstanceStatus status, String result) {
+    public void move(Long wfInstanceId, Long instanceId, InstanceStatus status, String result,Long instanceJobId) {
 
         int lockId = wfInstanceId.hashCode();
         try {
             segmentLock.lockInterruptible(lockId);
 
             Optional<WorkflowInstanceInfoDO> wfInstanceInfoOpt = workflowInstanceInfoRepository.findByWfInstanceId(wfInstanceId);
+            Optional<WorkflowInstanceStuatusInfoDo> WorkflowInstanceOpt = workflowInstanceStuatusRepository.findByWfInstanceId(wfInstanceId);
+
             if (!wfInstanceInfoOpt.isPresent()) {
                 log.error("[WorkflowInstanceManager] can't find metadata by workflowInstanceId({}).", wfInstanceId);
                 return;
             }
             WorkflowInstanceInfoDO wfInstance = wfInstanceInfoOpt.get();
             Long wfId = wfInstance.getWorkflowId();
-
+            WorkflowInstanceStuatusInfoDo WorkflowInstanceStand = WorkflowInstanceOpt.get();
             // 特殊处理手动终止的情况
             if (status == InstanceStatus.STOPPED) {
                 // 工作流已经不在运行状态了（由用户手动停止工作流实例导致），不需要任何操作
@@ -204,13 +215,41 @@ public class WorkflowInstanceManager {
 
                 // 更新完成节点状态
                 boolean allFinished = true;
+                boolean isInstanceFinished = instanceId != null;
+                boolean jobInstanceFinished = instanceJobId != null;
                 for (PEWorkflowDAG.Node node : dag.getNodes()) {
-                    if (instanceId.equals(node.getInstanceId())) {
+                    if (isInstanceFinished&&instanceId.equals(node.getInstanceId())) {
+
                         node.setStatus(status.getV());
                         node.setResult(result);
+                        // 结束该节点下方所有的任务
+                        if (status != InstanceStatus.SUCCEED){
+                        List<Long> jobidArrayList =   rumWorkfolwJobInstanceFailed(wfId,wfInstanceId,node.getJobId(),dag,status,result);
+                        for (Long l: jobidArrayList){
+                             for (PEWorkflowDAG.Node nodes : dag.getNodes()){
+                                if (l.equals(nodes.getJobId())){
+                                    nodes.setStatus(status.getV());
+                                    nodes.setResult(result);
+                                }
 
-                        log.info("[Workflow-{}|{}] node(jobId={},instanceId={}) finished in workflowInstance, status={},result={}", wfId, wfInstanceId, node.getJobId(), instanceId, status.name(), result);
+                            }
+                        }
+
+                        }
+
                     }
+
+
+                    if (jobInstanceFinished&&instanceJobId.equals(node.getJobId())){
+                        node.setStatus(status.getV());
+                        node.setResult(result);
+                        if (status != InstanceStatus.SUCCEED){
+                            rumWorkfolwJobInstanceFailed(wfId,wfInstanceId,node.getJobId(),dag,status,result);
+                        }
+
+                    }
+
+
 
                     if (InstanceStatus.generalizedRunningStatus.contains(node.getStatus())) {
                         allFinished = false;
@@ -222,35 +261,52 @@ public class WorkflowInstanceManager {
                 wfInstance.setDag(JSONObject.toJSONString(dag));
                 // 工作流已经结束（某个节点失败导致工作流整体已经失败），仅更新最新的DAG图
                 if (!WorkflowInstanceStatus.generalizedRunningStatus.contains(wfInstance.getStatus())) {
-                    workflowInstanceInfoRepository.saveAndFlush(wfInstance);
+
                     log.info("[Workflow-{}|{}] workflow already finished(status={}), just update the dag info.", wfId, wfInstanceId, wfInstance.getStatus());
-                    return;
+                    WorkflowInstanceStand.setStatus(wfInstance.getStatus());
+                    workflowInstanceStuatusRepository.save(WorkflowInstanceStand);
+                    wfInstance.setStatus(WorkflowInstanceStatus.RUNNING.getV());
+                    workflowInstanceInfoRepository.saveAndFlush(wfInstance);
+                  // return;
                 }
 
                 // 任务失败，DAG流程被打断，整体失败
                 if (status == InstanceStatus.FAILED) {
                     log.warn("[Workflow-{}|{}] workflow instance process failed because middle task(instanceId={}) failed", wfId, wfInstanceId, instanceId);
-                    onWorkflowInstanceFailed(SystemInstanceResult.MIDDLE_JOB_FAILED, wfInstance);
-                    return;
+                    onWorkflowInstanceFailed(SystemInstanceResult.MIDDLE_JOB_FAILED, wfInstance,WorkflowInstanceStand);
+                   // return;
                 }
 
                 // 子任务被手动停止
                 if (status == InstanceStatus.STOPPED) {
-                    wfInstance.setStatus(WorkflowInstanceStatus.STOPPED.getV());
+                    wfInstance.setStatus(WorkflowInstanceStatus.RUNNING.getV());
                     wfInstance.setResult(SystemInstanceResult.MIDDLE_JOB_STOPPED);
                     wfInstance.setFinishedTime(System.currentTimeMillis());
                     workflowInstanceInfoRepository.saveAndFlush(wfInstance);
 
                     log.warn("[Workflow-{}|{}] workflow instance stopped because middle task(instanceId={}) stopped by user", wfId, wfInstanceId, instanceId);
-                    return;
+                    WorkflowInstanceStand.setStatus(WorkflowInstanceStatus.STOPPED.getV());
+                    workflowInstanceStuatusRepository.save(WorkflowInstanceStand);
+                    //return;
                 }
 
+
+                // 所有任务状态结束任务也执行完
+                boolean nodeIsStatus =true;
+                for (PEWorkflowDAG.Node node : dag.getNodes()){
+                    if (node.getStatus() > InstanceStatus.FAILED.getV()){
+                        nodeIsStatus =false;
+                        break;
+                    }
+
+                }
                 // 工作流执行完毕（能执行到这里代表该工作流内所有子任务都执行成功了）
-                if (allFinished) {
+                if (allFinished||nodeIsStatus) {
                     wfInstance.setStatus(WorkflowInstanceStatus.SUCCEED.getV());
                     // 最终任务的结果作为整个 workflow 的结果
                     wfInstance.setResult(result);
                     wfInstance.setFinishedTime(System.currentTimeMillis());
+                    wfInstance.setStatus(WorkflowInstanceStand.getStatus());
                     workflowInstanceInfoRepository.saveAndFlush(wfInstance);
 
                     log.info("[Workflow-{}|{}] process successfully.", wfId, wfInstanceId);
@@ -300,7 +356,7 @@ public class WorkflowInstanceManager {
                 jobId2InstanceId.forEach((jobId, newInstanceId) -> runInstance(jobId, newInstanceId, wfInstanceId, jobId2InstanceParams.get(jobId)));
 
             }catch (Exception e) {
-                onWorkflowInstanceFailed("MOVE NEXT STEP FAILED: " + e.getMessage(), wfInstance);
+                onWorkflowInstanceFailed("MOVE NEXT STEP FAILED: " + e.getMessage(), wfInstance,WorkflowInstanceStand);
                 log.error("[Workflow-{}|{}] update failed.", wfId, wfInstanceId, e);
             }
 
@@ -325,14 +381,19 @@ public class WorkflowInstanceManager {
         dispatchService.dispatch(jobInfo, instanceId, 0, instanceParams, wfInstanceId);
     }
 
-    private void onWorkflowInstanceFailed(String result, WorkflowInstanceInfoDO wfInstance) {
-
-        wfInstance.setStatus(WorkflowInstanceStatus.FAILED.getV());
+    private void onWorkflowInstanceFailed(String result, WorkflowInstanceInfoDO wfInstance, WorkflowInstanceStuatusInfoDo WorkflowInstanceStand) {
+        if (WorkflowInstanceStand != null){
+        wfInstance.setStatus(WorkflowInstanceStatus.RUNNING.getV());
         wfInstance.setResult(result);
         wfInstance.setFinishedTime(System.currentTimeMillis());
         wfInstance.setGmtModified(new Date());
 
-        workflowInstanceInfoRepository.saveAndFlush(wfInstance);
+            WorkflowInstanceStand.setStatus(WorkflowInstanceStatus.FAILED.getV());
+            workflowInstanceStuatusRepository.save(WorkflowInstanceStand);
+            workflowInstanceInfoRepository.saveAndFlush(wfInstance);
+        }
+
+
 
         // 报警
         try {
@@ -366,4 +427,63 @@ public class WorkflowInstanceManager {
         workflowInstanceInfoRepository.deleteById(wfInstance.getId());
 
     }
+
+    /**
+     * 用于工作流程依赖
+     * @param wfInstanceId
+     * @return
+     */
+    public void runWorkflowStatusFailed(Long wfInstanceId,Long instanceId,String taskTrackerAddress,Long currentRunningTimes, Long current,String dbInstanceParams,Date now){
+        WorkflowInstanceInfoDO wfInstanceInfoOpt = workflowInstanceInfoRepository.findByWfInstanceId(wfInstanceId).orElseGet(WorkflowInstanceInfoDO::new);
+    while (true){
+            // 运行中之后的几种状态
+            if (wfInstanceInfoOpt.getStatus() != null&&wfInstanceInfoOpt.getStatus() > WorkflowInstanceStatus.RUNNING.getV()){
+                // 修改状态对应需要加1 手动停止除外
+                int status =0;
+                if (WorkflowInstanceStatus.STOPPED.getV() == wfInstanceInfoOpt.getStatus()){
+                    status = wfInstanceInfoOpt.getStatus() + 1;
+                    instanceInfoRepository.update4TriggerSucceed(instanceId, status, currentRunningTimes, current, taskTrackerAddress, dbInstanceParams, now);
+                }else {
+                    status = wfInstanceInfoOpt.getStatus();
+                    instanceInfoRepository.update4TriggerSucceed(instanceId, wfInstanceInfoOpt.getStatus(), currentRunningTimes, current, taskTrackerAddress, dbInstanceParams, now);
+
+                }
+                instanceManager.processFinishedInstance(instanceId, wfInstanceId, InstanceStatus.of(status), SystemInstanceResult.NO_WORKER_AVAILABLE);
+               return;
+            }else {
+                try
+                {
+                    //单位：毫秒
+                    Thread.sleep(60000);
+                    wfInstanceInfoOpt = workflowInstanceInfoRepository.findByWfInstanceId(wfInstanceId).orElseGet(WorkflowInstanceInfoDO::new);
+                } catch (Exception e) {
+                    log.error(""+e);
+                }
+            }
+        }
+
+    }
+
+    /**
+     * 遍历出输入节点子节点
+     * @param wfId
+     * @param wfInstanceId
+     * @param jobId
+     * @param dag
+     * @param status
+     * @param result
+     */
+    private List<Long> rumWorkfolwJobInstanceFailed(Long wfId,Long wfInstanceId,Long jobId, PEWorkflowDAG dag, InstanceStatus status, String result) {
+        List<Long> id = new ArrayList<>();
+        for (PEWorkflowDAG.Edge edge:dag.getEdges()){
+        if (jobId.equals(edge.getFrom())) {
+            log.info("[Workflow-{}|{}] node(jobId={}) finished in workflowInstance, status={},result={}", wfInstanceId,wfId, jobId, status.name(), result);
+            id.add(edge.getTo());
+            id.addAll(rumWorkfolwJobInstanceFailed(wfId,wfInstanceId,edge.getTo(),dag,status,""));
+        }
+        }
+        return id;
+    }
+
 }
+

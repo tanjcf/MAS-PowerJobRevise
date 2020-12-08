@@ -16,8 +16,8 @@ public enum ProcessorType {
     EMBEDDED_JAVA(1, "内置JAVA处理器"),
     SHELL(2, "SHELL脚本"),
     PYTHON(3, "Python脚本"),
-    JAVA_CONTAINER(4, "Java容器");
-
+    JAVA_CONTAINER(4, "Java容器"),
+    WORK_FLOW(5,"任务流程依赖");
     private int v;
     private String des;
 

@@ -38,7 +38,7 @@ public class InstanceInfoDO {
     @Column
     private String instanceParams;
 
-    // 该任务实例的类型，普通/工作流（InstanceType）
+    // 该任务实例的类型，普通/工作流（InstanceType）任务依赖
     private Integer type;
     // 该任务实例所属的 workflow ID，仅 workflow 任务存在
     private Long wfInstanceId;
@@ -66,5 +66,8 @@ public class InstanceInfoDO {
 
     private Date gmtCreate;
     private Date gmtModified;
+
+    private int processorType;
+    private String processorInfo;
 
 }

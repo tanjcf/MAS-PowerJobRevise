@@ -168,7 +168,7 @@ public class SqlFieldService {
         List<PEWorkflowDAG.Node> nodeList = new ArrayList<>();
         List<PEWorkflowDAG.Edge> edgeList = new ArrayList<>();
         PEWorkflowDAG.Edge edge;
-        List<JobInfoDO> jobInfos = jobInfoRepository.findByWfNameLike(wfName);
+        List<JobInfoDO> jobInfos = jobInfoRepository.findByWfNameLikeAndStatusNot(wfName,SwitchableStatus.DELETED.getV());
         Map<String, ArrayList<Long>> jobtoke = jobToke(jobInfos);
 
         for (JobInfoDO j : jobInfos) {

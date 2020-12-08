@@ -39,7 +39,6 @@ public class PowerJobServerConfigKey {
     /**
      * worker 文件保存路径
      */
-    public static final String WORKER_FILE_PATH="/home/powerjob/worker/";
-    public static final String H2="/h2/";
+    public static final String ZIP_File = "zip";
 
 }

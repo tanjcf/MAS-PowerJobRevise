@@ -18,6 +18,7 @@ import com.github.kfcfans.powerjob.server.persistence.core.model.InstanceInfoDO;
 import com.github.kfcfans.powerjob.server.persistence.core.model.JobInfoDO;
 import com.github.kfcfans.powerjob.server.persistence.core.repository.InstanceInfoRepository;
 import com.github.kfcfans.powerjob.server.persistence.core.repository.JobInfoRepository;
+import com.github.kfcfans.powerjob.server.persistence.core.repository.WorkflowInstanceInfoRepository;
 import com.github.kfcfans.powerjob.server.service.DispatchService;
 import com.github.kfcfans.powerjob.server.service.id.IdGenerateService;
 import lombok.extern.slf4j.Slf4j;
@@ -53,6 +54,8 @@ public class InstanceService {
     private JobInfoRepository jobInfoRepository;
     @Resource
     private InstanceInfoRepository instanceInfoRepository;
+    @Resource
+    private WorkflowInstanceInfoRepository workflowInstanceInfoRepository;
 
     /**
      * 创建任务实例（注意，该方法并不调用 saveAndFlush，如果有需要立即同步到DB的需求，请在方法结束后手动调用 flush）
@@ -109,6 +112,7 @@ public class InstanceService {
             instanceInfoRepository.saveAndFlush(instanceInfo);
 
             instanceManager.processFinishedInstance(instanceId, instanceInfo.getWfInstanceId(), STOPPED, SystemInstanceResult.STOPPED_BY_USER);
+         
 
             /*
             不可靠通知停止 TaskTracker
